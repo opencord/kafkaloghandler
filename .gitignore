@@ -1,0 +1,7 @@
+*.pyc
+dist
+*.egg-info
+MANIFEST
+.coverage
+coverage.xml
+.git*
