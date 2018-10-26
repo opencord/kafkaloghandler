@@ -14,12 +14,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from kafkaloghandler import KafkaLogHandler
 import json
 import logging
 import unittest
 
-from mock import patch
-from kafkaloghandler import KafkaLogHandler
+# mock is a part of unittest in python 3
+try:
+    from mock import patch
+except ImportError:
+    from unittest.mock import patch
 
 
 class FakeKafkaProducer():
@@ -66,7 +70,7 @@ class TestKafkaLogHandler(unittest.TestCase):
 
             self.logger.warn('Warning')
 
-            emit.assert_called_once()
+            assert emit.call_count == 1
 
     def test_with_structure(self):
         '''
@@ -93,7 +97,7 @@ class TestKafkaLogHandler(unittest.TestCase):
             decoded_message = json.loads(klh.producer.value)
 
             self.assertEqual(klh.producer.topic, 'testtopic')
-            self.assertEqual(decoded_message['msg'], 'structured')
+            self.assertEqual(decoded_message['message'], 'structured')
             self.assertEqual(decoded_message['foo'], 'value1')
             self.assertEqual(decoded_message['bar'], 'value2')
             self.assertEqual(decoded_message['l1.l2.l3'], 'nested')
@@ -122,7 +126,7 @@ class TestKafkaLogHandler(unittest.TestCase):
 
             decoded_message = json.loads(klh.producer.value)
 
-            self.assertEqual(decoded_message['msg'], 'noflatten')
+            self.assertEqual(decoded_message['message'], 'noflatten')
             self.assertEqual(decoded_message['foo'], 'value1')
             self.assertEqual(decoded_message['l1'], {'l2': {'l3': "nested"}})
 
@@ -151,7 +155,7 @@ class TestKafkaLogHandler(unittest.TestCase):
 
             decoded_message = json.loads(klh.producer.value)
 
-            self.assertEqual(decoded_message['msg'], 'oneflatten')
+            self.assertEqual(decoded_message['message'], 'oneflatten')
             self.assertEqual(decoded_message['foo'], 'value1')
             self.assertEqual(decoded_message['l1_l2'], {'l3': 'nested'})
 
@@ -181,7 +185,7 @@ class TestKafkaLogHandler(unittest.TestCase):
 
             self.assertEqual(klh.producer.key, 'klh')
             self.assertEqual(decoded_message1['foo'], 'value1')
-            self.assertEqual(decoded_message1['msg'], 'defaultkey')
+            self.assertEqual(decoded_message1['message'], 'defaultkey')
             self.assertEqual(decoded_message1['l1.l2.l3'], 'nested')
 
             # log with key overridden
@@ -191,7 +195,7 @@ class TestKafkaLogHandler(unittest.TestCase):
             decoded_message2 = json.loads(klh.producer.value)
 
             self.assertEqual(klh.producer.key, 'override')
-            self.assertEqual(decoded_message2['msg'], 'keyoverride')
+            self.assertEqual(decoded_message2['message'], 'keyoverride')
             self.assertEqual(decoded_message2['foo'], 'value1')
             self.assertEqual(decoded_message2['l1.l2.l3'], 'nested')
 
@@ -221,7 +225,7 @@ class TestKafkaLogHandler(unittest.TestCase):
             decoded_message = json.loads(klh.producer.value)
 
             self.assertEqual(klh.producer.topic, 'testtopic')
-            self.assertEqual(decoded_message['msg'], 'blacklist')
+            self.assertEqual(decoded_message['message'], 'blacklist')
             self.assertEqual(decoded_message['foo'], 'value1')
             with self.assertRaises(KeyError):
                 decoded_message['bar']

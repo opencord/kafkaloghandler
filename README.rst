@@ -4,10 +4,11 @@ KafkaLogHandler
 Provides a python ``logging`` compatible handler for producing messages to a
 Kafka message bus.
 
-Depends on the confluent_kafka module to connect to Kafka
+Depends on the confluent_kafka module to connect to Kafka.
 
-Designed to support structured logging, and serializes log data as JSON when
-published as a Kafka message.
+Designed to support both standard and structlog formats, and serializes log
+data as JSON when published as a Kafka message.  Messages are normalized to be
+more compatible with Logstash/Filebeat formats.
 
 Usage
 =====
@@ -80,7 +81,7 @@ Usage
 *blacklist*
   List of top-level keys to discard from structured logs when outputting JSON.
 
-  **default:** ``['_logger']``
+  **default:** ``["_logger", "_name"]``
 
 
 Tests

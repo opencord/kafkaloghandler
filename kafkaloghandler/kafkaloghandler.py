@@ -16,10 +16,11 @@
 
 # kafkaloghandler - logging handler that sends to Kafka
 
-import json
 import confluent_kafka
+import json
 import logging
 import sys
+from datetime import datetime
 
 
 class KafkaLogHandler(logging.Handler):
@@ -31,7 +32,7 @@ class KafkaLogHandler(logging.Handler):
                  timeout=10.0,  # kafka connection timeout
                  flatten=5,  # maximum depth of dict flattening
                  separator=".",  # separator used when flattening
-                 blacklist=["_logger"],  # keys excluded from messages
+                 blacklist=["_logger", "_name"],  # keys excluded from messages
                  ):
 
         logging.Handler.__init__(self)
@@ -54,8 +55,8 @@ class KafkaLogHandler(logging.Handler):
 
             self.producer = confluent_kafka.Producer(**producer_config)
 
-        except confluent_kafka.KafkaError, e:
-            print "Kafka Error: %s" % e
+        except confluent_kafka.KafkaError as e:
+            print("Kafka Error: %s" % e)
             # die if there's an error
             sys.exit(1)
 
@@ -68,7 +69,7 @@ class KafkaLogHandler(logging.Handler):
 
         flattened = {}
 
-        for k, v in toflatten.iteritems():
+        for k, v in toflatten.items():
 
             prefix = "%s%s%s" % (ns, self.separator, k)
 
@@ -81,17 +82,47 @@ class KafkaLogHandler(logging.Handler):
 
     def emit(self, record):
 
+        # make a dict from LogRecord
+        rec = vars(record)
+
         recvars = {}
 
         message_key = self.key
 
+        # structlog puts all arguments under a 'msg' dict, whereas
+        # with normal logging 'msg' is a string. If 'msg' is a dict,
+        # merge it with 'rec', and remove it.
+        if 'msg' in rec and isinstance(rec['msg'], dict):
+            rec.update(rec['msg'])
+            del rec['msg']
+
         # fixup any structured arguments
-        for k, v in vars(record).iteritems():
+        for k, v in rec.items():
+
             # remove any items with keys in blacklist
             if k in self.blacklist:
                 continue
 
-            # if a "key" is found, use as the kafka key and remove
+            # conform vars to be closer to logstash format
+
+            # 'created' is naive (no timezone) time, per:
+            # https://github.com/python/cpython/blob/2.7/Lib/logging/__init__.py#L242
+            if k is 'created':
+                recvars['@timestamp'] = \
+                    datetime.utcfromtimestamp(v).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+                continue
+
+            # thread is an int in Python, but a string in others (Java), so rename
+            if k is 'thread':
+                recvars['threadId'] = v
+                continue
+
+            # 'message' is used more than 'msg' (standard) or 'event' (structlog)
+            if k in ['msg', 'event']:
+                recvars['message'] = v
+                continue
+
+            # if a 'key' is found, use as the kafka key and remove
             if k is 'key':
                 message_key = v
                 continue
@@ -101,6 +132,7 @@ class KafkaLogHandler(logging.Handler):
                 recvars.update(self._flatten(k, v, self.flatten))
                 continue
 
+            # pass remaining variables unchanged
             recvars[k] = v
 
         # Replace unserializable items with repr version.
@@ -118,8 +150,8 @@ class KafkaLogHandler(logging.Handler):
         try:
             self.producer.produce(self.topic, json_recvars, message_key)
 
-        except confluent_kafka.KafkaError, e:
-            print "Kafka Error: %s" % e
+        except confluent_kafka.KafkaError as e:
+            print("Kafka Error: %s" % e)
             # currently don't do anything on failure...
             pass
 
