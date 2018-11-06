@@ -29,6 +29,7 @@ class KafkaLogHandler(logging.Handler):
                  bootstrap_servers=["localhost:9092"],
                  key="klh",  # kafka default key
                  topic="kafkaloghandler",  # kafka default topic
+                 extra_config={},  # extra producer configuration
                  timeout=10.0,  # kafka connection timeout
                  flatten=5,  # maximum depth of dict flattening
                  separator=".",  # separator used when flattening
@@ -37,7 +38,12 @@ class KafkaLogHandler(logging.Handler):
 
         logging.Handler.__init__(self)
 
-        self.bootstrap_servers = bootstrap_servers
+        # Build the configuration for the kafka producer
+        self.producer_config = extra_config
+        self.producer_config.update({
+                'bootstrap.servers': ','.join(bootstrap_servers),
+            })
+
         self.topic = topic
         self.key = key
         self.flatten = flatten
@@ -49,11 +55,7 @@ class KafkaLogHandler(logging.Handler):
     def _connect(self):
 
         try:
-            producer_config = {
-                'bootstrap.servers': ','.join(self.bootstrap_servers),
-            }
-
-            self.producer = confluent_kafka.Producer(**producer_config)
+            self.producer = confluent_kafka.Producer(**self.producer_config)
 
         except confluent_kafka.KafkaError as e:
             print("Kafka Error: %s" % e)
@@ -61,7 +63,10 @@ class KafkaLogHandler(logging.Handler):
             sys.exit(1)
 
     def _flatten(self, ns, toflatten, maxdepth):
-        """ flatten dicts creating a key.subkey.subsubkey... hierarchy """
+        """
+        flatten dicts creating a key.subkey.subsubkey... hierarchy
+        flatten lists creating a <index>.subkey... hierarchy
+        """
 
         # if max depth reached, return k:v dict
         if maxdepth < 1:
@@ -69,11 +74,17 @@ class KafkaLogHandler(logging.Handler):
 
         flattened = {}
 
-        for k, v in toflatten.items():
+        # turn dict into tuples, enumerate lists
+        if isinstance(toflatten, list):
+            tf = enumerate(toflatten)
+        else:
+            tf = toflatten.items()
+
+        for k, v in tf:
 
             prefix = "%s%s%s" % (ns, self.separator, k)
 
-            if isinstance(v, dict):
+            if isinstance(v, dict) or isinstance(v, list):
                 flattened.update(self._flatten(prefix, v, maxdepth-1))
             else:
                 flattened[prefix] = v
@@ -127,8 +138,8 @@ class KafkaLogHandler(logging.Handler):
                 message_key = v
                 continue
 
-            # flatten any sub-dicts down, if enabled
-            if self.flatten and isinstance(v, dict):
+            # flatten any sub-dicts/lists down, if enabled
+            if self.flatten and isinstance(v, dict) or isinstance(v, list):
                 recvars.update(self._flatten(k, v, self.flatten))
                 continue
 
@@ -149,6 +160,9 @@ class KafkaLogHandler(logging.Handler):
 
         try:
             self.producer.produce(self.topic, json_recvars, message_key)
+
+            # recommended by https://github.com/confluentinc/confluent-kafka-python/issues/16
+            self.producer.poll(0)
 
         except confluent_kafka.KafkaError as e:
             print("Kafka Error: %s" % e)
